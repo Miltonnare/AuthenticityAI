@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:16-pgdg
+    container_name: authenticity_db
+    environment:
+      POSTGRES_DB: authenticity
+      POSTGRES_USER: dev_user
+      POSTGRES_PASSWORD: dev_secure_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev_user -d authenticity"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: authenticity_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: authenticity_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://dev_user:dev_secure_password@postgres:5432/authenticity
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET=super_secret_jwt_key_authenticity_platform_2026
+      - ACCESS_TOKEN_EXPIRE_MINUTES=120
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: authenticity_worker
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=1
+    volumes:
+      - ./backend:/app
+      - cache_models:/root/.cache
+    environment:
+      - DATABASE_URL=postgresql://dev_user:dev_secure_password@postgres:5432/authenticity
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: authenticity_ui
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  redisdata:
+  cache_models:
