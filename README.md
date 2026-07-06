@@ -29,38 +29,126 @@ This platform is built on several key engineering and editorial principles:
 
 ## 🏗️ System Architecture
 
-The platform uses a **modular monolith architecture** for the backend API and Next.js for the user interface, utilizing Celery background workers to process heavy audio transcription and NLI model inferences.
+The platform uses a modular monolith backend and Celery workers to handle heavy machine learning operations.
 
+### 1. Component Architecture
+This diagram outlines the relationships between frontend views, backend modules, database layers, and background workers.
+
+```mermaid
+graph TD
+    User([User / Journalist / Auditor]) -->|HTTPS| Frontend[Next.js 15 Web App]
+    Frontend -->|REST APIs / JWT| API[FastAPI Gateway & Core Service]
+    
+    subgraph Core Backend [Backend Services]
+        API --> Auth[Auth & RBAC Module]
+        API --> Profiles[Politician Profiles Module]
+        API --> Search[Hybrid Search Module]
+        API --> Ingestion[Ingestion Controller]
+        API --> Admin[Admin Moderation Module]
+    end
+
+    Ingestion -->|Publish Job| Redis[Redis Broker & Cache]
+    Redis -->|Consume Job| Workers[Celery AI Workers]
+
+    subgraph AI Pipeline [AI Worker Services]
+        Workers --> Preprocess[Audio Extractor]
+        Workers --> Transcribe[WhisperX Service]
+        Workers --> ClaimExtractor[spaCy / HF Sentence Extractor]
+        Workers --> Embedder[Sentence Transformer Embeddings]
+        Workers --> NLIEngine[DeBERTa-v3 MNLI Classifier]
+    end
+
+    Core Backend -->|SQL / pgvector| PostgreSQL[(PostgreSQL DB)]
+    Workers -->|Save Transcripts/Claims| PostgreSQL
 ```
-                  +-------------------------------------------------+
-                  |                 User Browser                    |
-                  +-----------------------+-------------------------+
-                                          |
-                                          | HTTPS / REST APIs
-                                          v
-                  +-----------------------+-------------------------+
-                  |               Next.js Web App                   |
-                  +-----------------------+-------------------------+
-                                          |
-                                          | JSON + JWT
-                                          v
-                  +-----------------------+-------------------------+
-                  |         FastAPI Core Backend Application        |
-                  |  (Auth, Profiles, Ingest, Admin, Search API)    |
-                  +-------+-----------------------+-----------------+
-                          |                       |
-                          | SQL / Vector Queries  | Publish Ingest Job
-                          v                       v
-             +------------+-------------+  +-------+-----------------+
-             | PostgreSQL DB & pgvector |  |  Redis Broker & Cache   |
-             +--------------------------+  +-------+-----------------+
-                                                  ^
-                                                  | Consume Ingest Job
-                                                  v
-                                           +------+-----------------+
-                                           |  Celery Worker (ML)    |
-                                           |  (WhisperX, spacy, NLI) |
-                                           +------------------------+
+
+### 2. Ingestion & Analysis Sequence
+Shows the step-by-step processing lifecycle when a user submits a political debate or speech URL.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Admin / Moderator
+    participant FE as Next.js UI
+    participant BE as FastAPI API
+    participant DB as PostgreSQL
+    participant R as Redis (Queue)
+    participant W as Celery Worker
+    participant AI as AI Pipeline (WhisperX / DeBERTa)
+
+    User->>FE: Submit Ingestion Form (YouTube URL)
+    FE->>BE: POST /api/v1/speeches (Metadata & Source URL)
+    BE->>DB: Create Speech Record (status: PENDING)
+    BE->>R: Push job `process_speech(speech_id)`
+    BE-->>FE: Return Job ID (status: QUEUED)
+    FE->>User: Display processing spinner
+    
+    Note over W: Worker polls Redis
+    R->>W: Fetch job `process_speech(speech_id)`
+    W->>DB: Update Speech (status: PROCESSING)
+    W->>W: Download Media & Extract Audio (ffmpeg)
+    
+    W->>AI: Transcribe audio (WhisperX)
+    AI-->>W: Transcript with word-level timestamps
+    W->>DB: Save Transcript Segments
+    
+    W->>AI: Extract claims (spaCy entity + sent segment)
+    AI-->>W: List of Claims
+    
+    W->>AI: Generate Embeddings & Query Database for Similar Claims
+    AI-->>W: Neighboring Claims (Cosine Similarity > 0.70)
+    
+    loop For each neighbor
+        W->>AI: Perform NLI (DeBERTa-v3 MNLI)
+        AI-->>W: NLI Labels (Entailment, Neutral, Contradiction)
+        alt Contradiction detected
+            W->>DB: Create Contradiction Record (status: PENDING_REVIEW)
+        end
+    end
+    
+    W->>DB: Update Speech (status: COMPLETED)
+    Note over FE: Frontend polls status or via WebSockets
+    FE->>BE: GET /api/v1/speeches/{id}/status
+    BE-->>FE: Return status: COMPLETED
+    FE->>User: Display completed transcript & flagged contradictions
+```
+
+### 3. Deployment Topology
+The system is built to deploy easily on standard environments and is pre-configured to utilize GPU worker nodes when available.
+
+```mermaid
+graph TD
+    Browser([User Browser]) -->|Cloudflare CDN| Nginx[Nginx Reverse Proxy]
+    Nginx -->|Route /api/*| CoreBackend[FastAPI App - Gunicorn/Uvicorn]
+    Nginx -->|Route /*| Front[Next.js App Server]
+    
+    CoreBackend --> PostgreSQL[(PostgreSQL + pgvector)]
+    CoreBackend --> Redis[(Redis)]
+    
+    Redis <--> CeleryGPU[Celery Worker CPU/GPU - WhisperX & NLI]
+    CeleryGPU --> PostgreSQL
+```
+
+### 4. Data Processing Flow
+Outlines how raw unstructured media files are transformed into verifiable, structured semantic inconsistency listings.
+
+```mermaid
+flowchart TD
+    RawMedia[Raw YouTube URL / MP4 File]
+    RawMedia -->|Audio Extraction| Audio[16kHz Mono WAV Audio]
+    Audio -->|WhisperX Speech-to-Text| Segments[Transcript Segments with Timestamps]
+    
+    Segments -->|Sentence Segmentation| CleanSentences[Cleaned Sentences]
+    CleanSentences -->|NER & Coreference Resolution| Claims[Extracted Claims / Assertions]
+    
+    Claims -->|all-MiniLM-L6-v2| Vectors[Claim Vector Embeddings]
+    Vectors -->|pgvector Cosine Search| NeighborClaims[Historical Claims with Sim > 0.7]
+    
+    NeighborClaims & Claims -->|DeBERTa-v3-large-MNLI| NLIPair[Premise / Hypothesis Pair]
+    NLIPair -->|NLI Classification| Decision{Contradiction Probability > 0.75?}
+    
+    Decision -->|Yes| Flagged[Flagged Contradiction & Generate Confidence Score]
+    Decision -->|No| SavedClaim[Save Regular Claim to Database]
 ```
 
 ---
@@ -249,7 +337,7 @@ When a speech or transcript is ingested, it traverses a structured pipelines run
 ## 🚀 Installation & Setup Guide
 
 ### Running with Docker Compose (Recommended)
-Make sure you have [Docker](https://docs.docker.com/) and [Docker Compose](https://docs.docker.com/compose/) installed on your machine.
+Make sure you have [Docker](https://docs.docker.com/) and [Docker Compose](https://docs.google.com/compose/) installed on your machine.
 
 1. **Clone the Repository**:
    ```bash
