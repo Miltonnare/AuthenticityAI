@@ -77,10 +77,10 @@ sequenceDiagram
     participant AI as AI Pipeline (WhisperX / DeBERTa)
 
     User->>FE: Submit Ingestion Form (YouTube URL)
-    FE->>BE: POST /api/v1/speeches (Metadata & Source URL)
-    BE->>DB: Create Speech Record (status: PENDING)
+    FE->>BE: POST /api/v1/speeches/ingest/url (Metadata & Source URL)
+    BE->>DB: Create Speech Record (status: queued)
     BE->>R: Push job `process_speech(speech_id)`
-    BE-->>FE: Return Job ID (status: QUEUED)
+    BE-->>FE: Return Job ID (status: queued)
     FE->>User: Display processing spinner
     
     Note over W: Worker polls Redis
@@ -108,8 +108,8 @@ sequenceDiagram
     
     W->>DB: Update Speech (status: COMPLETED)
     Note over FE: Frontend polls status or via WebSockets
-    FE->>BE: GET /api/v1/speeches/{id}/status
-    BE-->>FE: Return status: COMPLETED
+    FE->>BE: GET /api/v1/speeches/ingest/{id}/status
+    BE-->>FE: Return status: completed
     FE->>User: Display completed transcript & flagged contradictions
 ```
 
@@ -243,7 +243,12 @@ CREATE TABLE speeches (
     source_url VARCHAR(512),
     media_type VARCHAR(50) NOT NULL, -- 'youtube', 'mp4', 'manual'
     status VARCHAR(50) NOT NULL DEFAULT 'pending', -- 'pending', 'processing', 'completed', 'failed'
-    date_delivered DATE NOT NULL
+    date_delivered DATE NOT NULL,
+    file_size_bytes BIGINT,
+    duration_seconds NUMERIC(8, 2),
+    audio_codec VARCHAR(50),
+    download_speed_kbps NUMERIC(8, 2),
+    error_log TEXT
 );
 
 CREATE TABLE transcript_segments (
@@ -322,6 +327,9 @@ When a speech or transcript is ingested, it traverses a structured pipelines run
 ### Speeches & Ingestion
 * `GET /api/v1/speeches` - List speeches.
 * `POST /api/v1/speeches` - Ingest video/transcript and trigger background workers (Requires *journalist/admin*).
+* `POST /api/v1/speeches/ingest/url` - Queue media ingestion from external streaming URL (YouTube) with SSRF checks (Requires *journalist/admin*).
+* `POST /api/v1/speeches/ingest/file` - Multipart form media file upload, validating types and sizes under 100MB (Requires *journalist/admin*).
+* `GET /api/v1/speeches/ingest/{id}/status` - Check background conversion and VAD chunking queue progression stats.
 * `GET /api/v1/speeches/{id}` - Fetch speech details and full timestamped transcripts.
 
 ### Search

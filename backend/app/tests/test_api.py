@@ -79,3 +79,84 @@ def test_politician_crud(client: TestClient):
     list_res = client.get("/api/v1/politicians")
     assert list_res.status_code == 200
     assert len(list_res.json()) >= 1
+
+def test_ingest_url_and_status(client: TestClient):
+    # Register and login admin
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "ingester@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "ingester@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create politician first
+    create_pol = client.post(
+        "/api/v1/politicians",
+        headers=headers,
+        json={"first_name": "Ingest", "last_name": "Pol", "party": "Republican"}
+    )
+    pol_id = create_pol.json()["id"]
+
+    # Ingest URL
+    ingest_res = client.post(
+        "/api/v1/speeches/ingest/url",
+        headers=headers,
+        json={
+            "politician_id": pol_id,
+            "title": "Tax Speech Ingress Test",
+            "source_url": "https://www.youtube.com/watch?v=123",
+            "media_type": "youtube",
+            "date_delivered": "2026-07-27"
+        }
+    )
+    assert ingest_res.status_code == 202
+    speech_id = ingest_res.json()["id"]
+
+    # Get status
+    status_res = client.get(f"/api/v1/speeches/ingest/{speech_id}/status")
+    assert status_res.status_code == 200
+    assert status_res.json()["status"] in ["queued", "processing", "completed"]
+
+def test_ingest_file(client: TestClient):
+    # Login admin
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "ingester@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create politician first
+    create_pol = client.post(
+        "/api/v1/politicians",
+        headers=headers,
+        json={"first_name": "Ingest", "last_name": "Pol2", "party": "Democrat"}
+    )
+    pol_id = create_pol.json()["id"]
+
+    # Ingest File
+    import io
+    file_content = b"fake audio content bytes"
+    file_io = io.BytesIO(file_content)
+    
+    ingest_res = client.post(
+        "/api/v1/speeches/ingest/file",
+        headers=headers,
+        data={
+            "politician_id": pol_id,
+            "title": "Uploaded Speech Ingress Test",
+            "date_delivered": "2026-07-27"
+        },
+        files={"file": ("speech.wav", file_io, "audio/wav")}
+    )
+    assert ingest_res.status_code == 202
+    speech_id = ingest_res.json()["id"]
+
+    # Get status
+    status_res = client.get(f"/api/v1/speeches/ingest/{speech_id}/status")
+    assert status_res.status_code == 200
+    assert status_res.json()["status"] in ["queued", "processing", "completed"]
