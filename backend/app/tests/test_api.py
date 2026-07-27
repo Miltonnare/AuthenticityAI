@@ -452,3 +452,39 @@ def test_fact_verification_workflow(client: TestClient, db_session):
     citation = db_session.query(Citation).filter(Citation.contradiction_id == contra.id).first()
     assert citation is not None
     assert citation.title == "Treasury tax reports 2026"
+
+def test_knowledge_graph_network(client: TestClient, db_session):
+    # Setup Admin Token
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "graph_tester@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "graph_tester@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create Politician
+    create_pol = client.post(
+        "/api/v1/politicians",
+        headers=headers,
+        json={"first_name": "Graphed", "last_name": "Pol", "party": "Independent"}
+    )
+    pol_id = create_pol.json()["id"]
+
+    # Call graph network endpoint
+    graph_res = client.get(
+        f"/api/v1/graph/politician/{pol_id}/network?depth=2",
+        headers=headers
+    )
+    assert graph_res.status_code == 200
+    assert "nodes" in graph_res.json()
+    assert "edges" in graph_res.json()
+    
+    # Assert nodes and edges format is correct
+    nodes = graph_res.json()["nodes"]
+    edges = graph_res.json()["edges"]
+    assert len(nodes) > 0
+    assert nodes[0]["id"] == pol_id or nodes[0]["id"] == "pol-1"

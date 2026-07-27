@@ -71,6 +71,23 @@ def classify_claim_typology(claim_text: str) -> tuple:
         return "legislative", 0.90
     return "general", 1.00
 
+def sync_claim_to_graph(claim):
+    query = """
+    MERGE (p:Politician {id: $politician_id})
+    MERGE (c:Claim {id: $claim_id})
+    ON CREATE SET c.text = $text, c.typology = $typology, c.category = $category
+    MERGE (p)-[:DELIVERED]->(c)
+    """
+    params = {
+        "politician_id": str(claim.politician_id),
+        "claim_id": str(claim.id),
+        "text": claim.claim_text,
+        "typology": claim.typology,
+        "category": claim.category
+    }
+    from app.core.graph import neo4j_connector
+    neo4j_connector.execute_query(query, params)
+
 
 @celery_app.task(name="process_speech", bind=True)
 def process_speech(self, speech_id: str):
@@ -213,6 +230,13 @@ def process_speech(self, speech_id: str):
                         claims_created.append(claim)
                     
         db.commit() # Flush claims to DB so we can search them
+        
+        # Sync claims to Knowledge Graph
+        try:
+            for claim in claims_created:
+                sync_claim_to_graph(claim)
+        except Exception as e:
+            logger.warning(f"Failed to sync claims to knowledge graph: {e}")
         
         # 4. Semantic Similarity & Contradiction Detection (NLI)
         logger.info("Executing NLI matching & contradiction checks...")
