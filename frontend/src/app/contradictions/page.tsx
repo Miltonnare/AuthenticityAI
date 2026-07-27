@@ -37,7 +37,7 @@ export default function ContradictionsPage() {
   const { data: contradictions, isLoading } = useQuery<Contradiction[]>({
     queryKey: ["all-contradictions", searchTerm],
     queryFn: () => {
-      let url = "/admin/contradictions/queue?status=verified"; // Pull verified ones for public
+      let url = "/admin/contradictions/queue?status=verified";
       if (searchTerm) {
         url += `&q=${encodeURIComponent(searchTerm)}`;
       }
@@ -47,25 +47,26 @@ export default function ContradictionsPage() {
   });
 
   return (
-    <div className="flex-1 bg-[#0f0f11] py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
-      <div className="mb-8 pb-4 border-b border-gray-800">
-        <h2 className="text-2xl font-bold font-serif leading-7 text-white sm:text-3xl">
+    <div className="flex-1 bg-[#09090b] py-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold font-serif tracking-tight text-white">
           Verified Inconsistencies
-        </h2>
-        <p className="mt-1 text-sm text-gray-500">
+        </h1>
+        <p className="mt-2 text-sm text-gray-500">
           A neutral public record tracking statements by the same speaker that have been flagged as semantically incompatible.
         </p>
       </div>
 
       {/* Search Filter */}
       <div className="relative mb-8">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
         <input
           type="text"
           placeholder="Filter inconsistencies by keyword..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 rounded bg-[#141417] border border-gray-800 focus:border-orange-500 outline-none text-sm text-white"
+          className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[#141416] border border-[#202024] focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none text-sm text-white transition-all"
         />
       </div>
 
@@ -77,9 +78,9 @@ export default function ContradictionsPage() {
       ) : contradictions && contradictions.length > 0 ? (
         <div className="space-y-6">
           {contradictions.map((c) => (
-            <div key={c.id} className="bg-[#141417] border border-gray-850 rounded-xl p-6 hover:border-gray-800 transition-all">
-              <div className="flex items-center justify-between mb-4 border-b border-gray-850 pb-3">
-                <span className="text-[10px] bg-orange-950 text-orange-400 font-bold px-2 py-0.5 rounded border border-orange-900/50 uppercase tracking-wider">
+            <div key={c.id} className="bg-[#141416] border border-[#202024] rounded-xl p-6 hover:border-[#303036] transition-all">
+              <div className="flex items-center justify-between mb-4 border-b border-[#202024] pb-3">
+                <span className="text-[10px] bg-orange-950/60 text-orange-400 font-bold px-2 py-0.5 rounded border border-orange-900/50 uppercase tracking-wider">
                   Category: {c.original_claim.category || "General"}
                 </span>
                 <span className="text-xs text-gray-500">
@@ -90,25 +91,25 @@ export default function ContradictionsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div>
                   <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block mb-1">Statement A</span>
-                  <p className="text-sm italic text-gray-300 pl-3 border-l border-gray-800 bg-[#0f0f11]/20 py-1">
+                  <p className="text-sm italic text-gray-300 pl-3 border-l-2 border-orange-500 bg-[#0c0c0e]/30 py-2 rounded-r">
                     "{c.original_claim.claim_text}"
                   </p>
                 </div>
                 <div>
                   <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block mb-1">Statement B</span>
-                  <p className="text-sm italic text-gray-300 pl-3 border-l border-orange-550 bg-[#0f0f11]/20 py-1">
+                  <p className="text-sm italic text-gray-300 pl-3 border-l-2 border-orange-500 bg-[#0c0c0e]/30 py-2 rounded-r">
                     "{c.contradicting_claim.claim_text}"
                   </p>
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-4 border-t border-gray-850 gap-4">
-                <p className="text-xs text-gray-450 flex-1 leading-relaxed">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-4 border-t border-[#202024] gap-4">
+                <p className="text-xs text-gray-400 flex-1 leading-relaxed">
                   <span className="font-bold text-white">Analysis:</span> {c.explanation}
                 </p>
                 <Link
                   href={`/contradictions/${c.id}`}
-                  className="text-xs font-semibold bg-gray-900 hover:bg-gray-800 border border-gray-800 text-white px-4 py-2 rounded-md flex items-center justify-center gap-1.5 transition-all h-fit"
+                  className="text-xs font-semibold bg-[#141416] hover:bg-[#1c1c20] border border-[#202024] text-white px-4 py-2.5 rounded-md flex items-center justify-center gap-1.5 transition-all h-fit"
                 >
                   Examine Source Transcripts
                   <ChevronRight className="w-3.5 h-3.5" />
