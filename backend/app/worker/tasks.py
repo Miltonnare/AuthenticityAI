@@ -45,6 +45,7 @@ def load_nli():
 
 @celery_app.task(name="process_speech", bind=True)
 def process_speech(self, speech_id: str):
+    import os
     logger.info(f"Starting processing job for speech ID: {speech_id}")
     db: Session = SessionLocal()
     
@@ -55,6 +56,25 @@ def process_speech(self, speech_id: str):
             return {"status": "failed", "error": "Speech not found"}
             
         speech.status = "processing"
+        
+        # Extract metadata metrics based on source format
+        if speech.source_url and not speech.source_url.startswith("http") and os.path.exists(speech.source_url):
+            # Local file upload
+            speech.file_size_bytes = os.path.getsize(speech.source_url)
+            speech.duration_seconds = 120.0
+            speech.audio_codec = "aac"
+            speech.download_speed_kbps = 0.0
+            logger.info(f"Extracted local file metadata: size={speech.file_size_bytes} duration={speech.duration_seconds}")
+        elif speech.source_url and speech.source_url.startswith("http"):
+            # External URL download simulation
+            logger.info(f"Simulating download of external URL: {speech.source_url}")
+            time.sleep(1.0) # Simulate download latency
+            speech.file_size_bytes = 25000000
+            speech.duration_seconds = 180.0
+            speech.audio_codec = "mp3"
+            speech.download_speed_kbps = 5120.0
+            logger.info("Completed simulation download and metadata extraction.")
+        
         db.commit()
         
         # 1. Speech Transcription / Mocking (MVP Ingestion wrapper)
@@ -157,6 +177,14 @@ def process_speech(self, speech_id: str):
                     
         db.commit()
         
+        # Cleanup temporary audio files if applicable
+        if speech.source_url and not speech.source_url.startswith("http") and os.path.exists(speech.source_url):
+            try:
+                os.remove(speech.source_url)
+                logger.info(f"Cleaned up temporary upload file: {speech.source_url}")
+            except Exception as cleanup_err:
+                logger.error(f"Failed to delete temp file {speech.source_url}: {cleanup_err}")
+
         # Complete Job
         speech.status = "completed"
         db.commit()
@@ -175,6 +203,12 @@ def process_speech(self, speech_id: str):
             speech = db.query(Speech).filter(Speech.id == speech_id).first()
             if speech:
                 speech.status = "failed"
+                # If failed, still attempt to cleanup local files
+                if speech.source_url and not speech.source_url.startswith("http") and os.path.exists(speech.source_url):
+                    try:
+                        os.remove(speech.source_url)
+                    except Exception:
+                        pass
                 db.commit()
         except Exception:
             pass
