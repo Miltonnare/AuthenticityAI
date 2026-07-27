@@ -39,6 +39,7 @@ def search_claims(
     q: str = Query(..., description="Query text to search for"),
     politician_id: Optional[UUID] = None,
     category: Optional[str] = None,
+    typology: Optional[str] = None,
     limit: int = 20,
     db: Session = Depends(get_db)
 ):
@@ -52,6 +53,7 @@ def search_claims(
     # Cosine similarity = 1 - Cosine Distance
     sql = """
         SELECT id, politician_id, speech_id, segment_id, claim_text, category, created_at,
+               language_code, original_claim_text, typology, extraction_confidence, is_decomposed, parent_claim_id,
                (1 - (embedding <=> :vector::vector)) AS similarity
         FROM claims
         WHERE 1=1
@@ -65,6 +67,10 @@ def search_claims(
     if category:
         sql += " AND category = :category"
         params["category"] = category
+        
+    if typology:
+        sql += " AND typology = :typology"
+        params["typology"] = typology
         
     # We also do a keyword match to boost lexical matches in case vector mapping is off
     sql += " ORDER BY embedding <=> :vector::vector LIMIT :limit"
@@ -81,6 +87,12 @@ def search_claims(
             segment_id=row["segment_id"],
             claim_text=row["claim_text"],
             category=row["category"],
+            language_code=row["language_code"],
+            original_claim_text=row["original_claim_text"],
+            typology=row["typology"],
+            extraction_confidence=float(row["extraction_confidence"]),
+            is_decomposed=row["is_decomposed"],
+            parent_claim_id=row["parent_claim_id"],
             created_at=row["created_at"]
         ))
         

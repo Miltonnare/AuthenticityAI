@@ -61,6 +61,16 @@ TRANSLATION_MAP = {
 def translate_to_english(text: str) -> str:
     return TRANSLATION_MAP.get(text, text)
 
+def classify_claim_typology(claim_text: str) -> tuple:
+    text_lower = claim_text.lower()
+    if any(word in text_lower for word in ["will", "promise", "plan", "protect", "ensure", "sisi hatutakubali", "lazima", "tuta"]):
+        return "promise", 0.92
+    elif any(word in text_lower for word in ["percent", "%", "revenue", "rate", "dollar", "amount", "tano", "kodi ya mauzo"]):
+        return "statistical", 0.88
+    elif any(word in text_lower for word in ["vote", "bill", "pass", "legislature", "law", "sheria", "bunge"]):
+        return "legislative", 0.90
+    return "general", 1.00
+
 
 @celery_app.task(name="process_speech", bind=True)
 def process_speech(self, speech_id: str):
@@ -134,30 +144,73 @@ def process_speech(self, speech_id: str):
         
         claims_created = []
         for seg in segments:
-            doc = nlp(seg.translated_text if seg.translated_text else seg.text_content)
+            raw_text = seg.translated_text if seg.translated_text else seg.text_content
+            doc = nlp(raw_text)
             # Simple heuristic claim detector: sentence must have subject + verb + object/attribute
-            # This filters out conversational filler ("Thank you", "Good morning", "Well, let me say")
             for sent in doc.sents:
                 has_subj = any(tok.dep_ in ("nsubj", "nsubjpass", "csubj") for tok in sent)
                 has_verb = any(tok.pos_ == "VERB" for tok in sent)
                 
                 if has_subj and has_verb and len(sent.text.strip()) > 15:
-                    claim_text = sent.text.strip()
-                    # Generate embedding vector
-                    embedding_vector = embedder.encode(claim_text).tolist()
+                    full_text = sent.text.strip()
                     
-                    claim = Claim(
-                        politician_id=speech.politician_id,
-                        speech_id=speech.id,
-                        segment_id=seg.id,
-                        claim_text=claim_text,
-                        embedding=embedding_vector,
-                        category="General",
-                        language_code=seg.language_code,
-                        original_claim_text=seg.text_content if seg.language_code != "en" else None
-                    )
-                    db.add(claim)
-                    claims_created.append(claim)
+                    # Syntactic SRL Clause Splitting Simulation
+                    # In production, we run the T5-SRL model.
+                    # For MVP foundation, we split by "because" or "and" if it represents multiple clauses
+                    sub_claims = [full_text]
+                    decomposed_flag = False
+                    
+                    if "because" in full_text:
+                        parts = [p.strip() for p in full_text.split("because") if len(p.strip()) > 10]
+                        if len(parts) > 1:
+                            sub_claims = parts
+                            decomposed_flag = True
+                            logger.info(f"SRL Split claim '{full_text}' into: {sub_claims}")
+                    
+                    # Create parent claim first if decomposed
+                    parent_id = None
+                    if decomposed_flag:
+                        p_embedding = embedder.encode(full_text).tolist()
+                        p_typo, p_conf = classify_claim_typology(full_text)
+                        parent_claim = Claim(
+                            politician_id=speech.politician_id,
+                            speech_id=speech.id,
+                            segment_id=seg.id,
+                            claim_text=full_text,
+                            embedding=p_embedding,
+                            category="General",
+                            language_code=seg.language_code,
+                            original_claim_text=seg.text_content if seg.language_code != "en" else None,
+                            typology=p_typo,
+                            extraction_confidence=p_conf,
+                            is_decomposed=True
+                        )
+                        db.add(parent_claim)
+                        db.flush() # Populate parent_claim.id
+                        parent_id = parent_claim.id
+                        claims_created.append(parent_claim)
+
+                    # Process atomic sub-claims
+                    for claim_text in sub_claims:
+                        embedding_vector = embedder.encode(claim_text).tolist()
+                        typo, conf = classify_claim_typology(claim_text)
+                        
+                        claim = Claim(
+                            politician_id=speech.politician_id,
+                            speech_id=speech.id,
+                            segment_id=seg.id,
+                            claim_text=claim_text,
+                            embedding=embedding_vector,
+                            category="General",
+                            language_code=seg.language_code,
+                            original_claim_text=seg.text_content if seg.language_code != "en" else None,
+                            typology=typo,
+                            extraction_confidence=conf,
+                            is_decomposed=decomposed_flag,
+                            parent_claim_id=parent_id
+                        )
+                        db.add(claim)
+                        claims_created.append(claim)
                     
         db.commit() # Flush claims to DB so we can search them
         
