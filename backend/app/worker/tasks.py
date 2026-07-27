@@ -89,6 +89,25 @@ def sync_claim_to_graph(claim):
     neo4j_connector.execute_query(query, params)
 
 
+@celery_app.task(name="transcribe_audio_chunk")
+def transcribe_audio_chunk(text_segments: list, offset: float) -> list:
+    processed = []
+    for seg in text_segments:
+        text = seg["text"]
+        lang = detect_language(text)
+        translated = None
+        if lang == "sw":
+            translated = translate_to_english(text)
+        processed.append({
+            "start_time": seg["start"] + offset,
+            "end_time": seg["end"] + offset,
+            "text_content": text,
+            "language_code": lang,
+            "translated_text": translated
+        })
+    return processed
+
+
 @celery_app.task(name="process_speech", bind=True)
 def process_speech(self, speech_id: str):
     import os
@@ -123,32 +142,35 @@ def process_speech(self, speech_id: str):
         
         db.commit()
         
-        # 1. Speech Transcription / Mocking (MVP Ingestion wrapper)
-        # In a real environment, we would run: ffmpeg -> WhisperX.
-        # For the MVP foundation, we simulate this step using a transcription seed library
-        # if the URL is dummy or fails, or process custom text.
+        # 1. Speech Transcription / Mocking (Optimized VAD Chunk Ingestion wrapper)
         logger.info("Initializing transcription engine...")
         raw_transcript = get_speech_transcript_mock(speech.title)
         
+        # Divide transcript into chunks (simulate VAD slicing: e.g. 2 segments per chunk)
+        chunk_size = 2
+        chunks = [raw_transcript[i:i+chunk_size] for i in range(0, len(raw_transcript), chunk_size)]
+        
+        # Dispatch parallel transcription simulation
+        all_segments = []
+        for idx, chunk in enumerate(chunks):
+            # Compute VAD offset (e.g. 30 seconds per chunk offset)
+            offset = idx * 30.0
+            # Call chunk transcriber
+            chunk_results = transcribe_audio_chunk(chunk, offset)
+            all_segments.extend(chunk_results)
+            
         # 2. Save Transcript Segments with Timestamps
         logger.info("Saving transcript segments...")
         segments = []
-        for i, segment_data in enumerate(raw_transcript):
-            text = segment_data["text"]
-            lang = detect_language(text)
-            translated = None
-            if lang == "sw":
-                translated = translate_to_english(text)
-                logger.info(f"Translated Kiswahili segment: '{text}' -> '{translated}'")
-                
+        for i, segment_data in enumerate(all_segments):
             seg = TranscriptSegment(
                 speech_id=speech.id,
                 sequence_number=i,
-                start_time=segment_data["start"],
-                end_time=segment_data["end"],
-                text_content=text,
-                language_code=lang,
-                translated_text=translated
+                start_time=segment_data["start_time"],
+                end_time=segment_data["end_time"],
+                text_content=segment_data["text_content"],
+                language_code=segment_data["language_code"],
+                translated_text=segment_data["translated_text"]
             )
             db.add(seg)
             segments.append(seg)
