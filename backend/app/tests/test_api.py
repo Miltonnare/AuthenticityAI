@@ -791,3 +791,22 @@ def test_external_audit_trails(client: TestClient, db_session):
     assert verify_res2.status_code == 200
     assert verify_res2.json()["is_valid"] is False
     assert verify_res2.json()["tampered_log_id"] == str(db_log.id)
+
+def test_media_processing_chunking(db_session):
+    from app.worker.tasks import transcribe_audio_chunk
+    
+    mock_segments = [
+        {"text": "First segment speech.", "start": 0.0, "end": 10.0},
+        {"text": "Second segment speech.", "start": 10.0, "end": 20.0}
+    ]
+    
+    # Process with a VAD offset of 180 seconds
+    offset = 180.0
+    results = transcribe_audio_chunk(mock_segments, offset)
+    
+    assert len(results) == 2
+    assert results[0]["start_time"] == 180.0
+    assert results[0]["end_time"] == 190.0
+    assert results[0]["text_content"] == "First segment speech."
+    assert results[1]["start_time"] == 190.0
+    assert results[1]["end_time"] == 200.0
