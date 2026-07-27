@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, DateTime, ForeignKey, Numeric, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Numeric, Text, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -20,6 +20,12 @@ class Claim(Base):
     # Multilingual fields
     language_code = Column(String(10), default="en", nullable=False)
     original_claim_text = Column(Text, nullable=True)
+    
+    # Advanced Claim Extraction fields
+    typology = Column(String(50), default="general", nullable=False)
+    extraction_confidence = Column(Numeric(5, 4), default=1.0000, nullable=False)
+    is_decomposed = Column(Boolean, default=False, nullable=False)
+    parent_claim_id = Column(UUID(as_uuid=True), ForeignKey("claims.id", ondelete="SET NULL"), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

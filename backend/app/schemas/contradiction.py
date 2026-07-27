@@ -12,6 +12,10 @@ class ClaimOut(BaseModel):
     category: Optional[str] = None
     language_code: Optional[str] = "en"
     original_claim_text: Optional[str] = None
+    typology: Optional[str] = "general"
+    extraction_confidence: Optional[float] = 1.0
+    is_decomposed: Optional[bool] = False
+    parent_claim_id: Optional[UUID] = None
     created_at: datetime
 
     class Config:
