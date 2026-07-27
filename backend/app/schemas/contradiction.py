@@ -65,3 +65,16 @@ class ContradictionReview(BaseModel):
     review_status: str # 'verified', 'dismissed'
     review_notes: Optional[str] = None
     citations: Optional[List[CitationCreate]] = []
+
+class AuditLogOut(BaseModel):
+    id: UUID
+    user_id: Optional[UUID] = None
+    action: str
+    target_id: UUID
+    payload: Optional[str] = None
+    prev_hash: Optional[str] = None
+    signature_hash: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

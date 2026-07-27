@@ -82,6 +82,8 @@ class AuditLog(Base):
     action = Column(String(100), nullable=False) # 'verify_contradiction', 'dismiss_contradiction', 'edit_claim'
     target_id = Column(UUID(as_uuid=True), nullable=False)
     payload = Column(Text, nullable=True) # JSON dump of what changed
+    prev_hash = Column(String(64), nullable=True)
+    signature_hash = Column(String(64), nullable=True, unique=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
