@@ -810,3 +810,90 @@ def test_media_processing_chunking(db_session):
     assert results[0]["text_content"] == "First segment speech."
     assert results[1]["start_time"] == 190.0
     assert results[1]["end_time"] == 200.0
+
+def test_user_feedback_loops(client: TestClient, db_session):
+    # Setup User Token
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "feedback_user@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "feedback_user@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Setup Admin Token
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "feedback_admin@authenticity.io", "password": "securepassword"}
+    )
+    from sqlalchemy import text
+    db_session.execute(
+        text("UPDATE users SET role = 'admin' WHERE email = 'feedback_admin@authenticity.io'")
+    )
+    db_session.commit()
+    
+    login_admin = client.post(
+        "/api/v1/auth/login",
+        data={"username": "feedback_admin@authenticity.io", "password": "securepassword"}
+    )
+    admin_token = login_admin.json()["access_token"]
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # Create Politician & Claims & Contradiction
+    create_pol = client.post(
+        "/api/v1/politicians",
+        headers=admin_headers,
+        json={"first_name": "Feedback", "last_name": "Pol", "party": "Independent"}
+    )
+    pol_id = create_pol.json()["id"]
+
+    from app.models.contradiction import Claim, Contradiction
+    import uuid
+    claim1 = Claim(politician_id=pol_id, speech_id=uuid.uuid4(), claim_text="Tax is good.", embedding=[0.1]*384)
+    claim2 = Claim(politician_id=pol_id, speech_id=uuid.uuid4(), claim_text="Tax is bad.", embedding=[0.11]*384)
+    db_session.add(claim1)
+    db_session.add(claim2)
+    db_session.commit()
+
+    contra = Contradiction(original_claim_id=claim1.id, contradicting_claim_id=claim2.id, confidence_score=0.9, explanation="Tax stance contradictions", review_status="verified")
+    db_session.add(contra)
+    db_session.commit()
+
+    # 1. Post a context suggestion (applied to claim)
+    suggestion_res = client.post(
+        "/api/v1/feedback",
+        headers=headers,
+        json={
+            "target_id": claim1.id,
+            "target_type": "claim",
+            "report_type": "context_omission",
+            "description": "Suggested missing context notes."
+        }
+    )
+    assert suggestion_res.status_code == 201
+
+    # 2. Get admin suggestions queue
+    queue_res = client.get("/api/v1/admin/feedback/queue", headers=admin_headers)
+    assert queue_res.status_code == 200
+    assert len(queue_res.json()) >= 1
+    assert queue_res.json()[0]["report_type"] == "context_omission"
+
+    # 3. Seed 5 verification challenges on the verified contradiction (reverts review_status to pending_review)
+    for i in range(5):
+        client.post(
+            "/api/v1/feedback",
+            headers=headers,
+            json={
+                "target_id": contra.id,
+                "target_type": "contradiction",
+                "report_type": "verification_challenge",
+                "description": f"Auditor dispute {i}."
+            }
+        )
+
+    # 4. Check contradiction status - should have shifted back to pending_review!
+    db_session.refresh(contra)
+    assert contra.review_status == "pending_review"
