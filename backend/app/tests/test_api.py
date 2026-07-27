@@ -488,3 +488,36 @@ def test_knowledge_graph_network(client: TestClient, db_session):
     edges = graph_res.json()["edges"]
     assert len(nodes) > 0
     assert nodes[0]["id"] == pol_id or nodes[0]["id"] == "pol-1"
+
+def test_source_credibility_engine(client: TestClient, db_session):
+    # Setup Admin Token
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "source_tester@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "source_tester@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. Register a media source
+    source_res = client.post(
+        "/api/v1/sources",
+        headers=headers,
+        json={
+            "name": "Parliamentary Hansard Portal",
+            "classification": "official",
+            "base_score": 1.00,
+            "website_url": "https://parliament.gov"
+        }
+    )
+    assert source_res.status_code == 201
+    source_id = source_res.json()["id"]
+
+    # 2. List media sources
+    list_res = client.get("/api/v1/sources")
+    assert list_res.status_code == 200
+    assert len(list_res.json()) == 1
+    assert list_res.json()[0]["name"] == "Parliamentary Hansard Portal"
