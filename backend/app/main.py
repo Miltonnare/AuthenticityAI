@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.routers import auth, politicians, speeches, search, admin, promises, graph, sources, export
+from app.routers import auth, politicians, speeches, search, admin, promises, graph, sources, export, notifications
 
 # Create database tables on startup for simplicity in MVP (Alembic is also available)
 try:
@@ -35,6 +35,7 @@ app.include_router(promises.router, prefix=settings.API_V1_STR)
 app.include_router(graph.router, prefix=settings.API_V1_STR)
 app.include_router(sources.router, prefix=settings.API_V1_STR)
 app.include_router(export.router, prefix=settings.API_V1_STR)
+app.include_router(notifications.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 def read_root():

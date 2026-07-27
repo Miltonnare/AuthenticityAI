@@ -658,3 +658,69 @@ def test_public_api_data_export(client: TestClient, db_session):
     export_csv = client.get(f"/api/v1/export/politician/{pol_id}?format=csv")
     assert export_csv.status_code == 200
     assert "text/csv" in export_csv.headers["content-type"]
+
+def test_notification_engine(client: TestClient, db_session):
+    # Setup User Token
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "notifier_user@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "notifier_user@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create Politician
+    create_pol = client.post(
+        "/api/v1/politicians",
+        headers=headers,
+        json={"first_name": "Notified", "last_name": "Politician", "party": "Independent"}
+    )
+    pol_id = create_pol.json()["id"]
+
+    # 1. Subscribe to Politician
+    sub_res = client.post(f"/api/v1/notifications/subscribe/{pol_id}", headers=headers)
+    assert sub_res.status_code == 200
+    assert "subscribed" in sub_res.json()["message"]
+
+    # 2. Register Promise
+    promise_res = client.post(
+        "/api/v1/promises",
+        headers=headers,
+        json={
+            "politician_id": pol_id,
+            "title": "Clean Water Promise",
+            "description": "Will construct water filters.",
+            "category": "Infrastructure"
+        }
+    )
+    promise_id = promise_res.json()["id"]
+
+    # 3. Add opposing evidence statement to change status to broken (triggers alert!)
+    evidence_res = client.post(
+        "/api/v1/promises/evidence",
+        headers=headers,
+        json={
+            "promise_id": promise_id,
+            "evidence_type": "opposing_statement",
+            "notes": "Statement contradicts construction efforts."
+        }
+    )
+    assert evidence_res.status_code == 201
+
+    # 4. Retrieve notifications and check the alert exists
+    notify_res = client.get("/api/v1/notifications", headers=headers)
+    assert notify_res.status_code == 200
+    assert len(notify_res.json()) == 1
+    assert "Promise Status Changed" in notify_res.json()[0]["title"]
+    assert "shifted from proposed to broken" in notify_res.json()[0]["body"]
+
+    # 5. Mark all as read
+    read_res = client.post("/api/v1/notifications/read-all", headers=headers)
+    assert read_res.status_code == 200
+    
+    # Verify notification is marked as read
+    notify_res2 = client.get("/api/v1/notifications", headers=headers)
+    assert notify_res2.json()[0]["is_read"] is True

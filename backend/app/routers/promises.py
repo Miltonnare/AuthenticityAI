@@ -68,12 +68,28 @@ def create_evidence(
     )
     db.add(evidence)
     
+    old_status = promise.status
     # State Machine checks: adjust promise status based on evidence tags
     if evidence_in.evidence_type == "opposing_statement" or (evidence_in.notes and "contradicts" in evidence_in.notes.lower()):
         promise.status = "broken"
     elif evidence_in.evidence_type == "supporting_vote" or (evidence_in.notes and "supports" in evidence_in.notes.lower()):
         promise.status = "in_progress"
     
+    if promise.status != old_status:
+        try:
+            from app.models.subscription import Subscription, Notification
+            subs = db.query(Subscription).filter(Subscription.politician_id == promise.politician_id).all()
+            for sub in subs:
+                n = Notification(
+                    user_id=sub.user_id,
+                    title="Promise Status Changed",
+                    body=f"Promise '{promise.title}' status shifted from {old_status} to {promise.status}.",
+                    is_read=False
+                )
+                db.add(n)
+        except Exception as e:
+            pass
+            
     db.commit()
     db.refresh(evidence)
     return evidence
