@@ -238,6 +238,15 @@ CREATE TABLE politicians (
     image_url VARCHAR(512)
 );
 
+CREATE TABLE sources (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) UNIQUE NOT NULL,
+    classification VARCHAR(50) NOT NULL DEFAULT 'unverified',
+    base_score NUMERIC(3, 2) NOT NULL DEFAULT 0.60,
+    website_url VARCHAR(512),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE speeches (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     politician_id UUID NOT NULL REFERENCES politicians(id) ON DELETE CASCADE,
@@ -250,7 +259,10 @@ CREATE TABLE speeches (
     duration_seconds NUMERIC(8, 2),
     audio_codec VARCHAR(50),
     download_speed_kbps NUMERIC(8, 2),
-    error_log TEXT
+    error_log TEXT,
+    source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
+    credibility_score NUMERIC(3, 2) DEFAULT 0.60,
+    credibility_breakdown TEXT
 );
 
 CREATE TABLE transcript_segments (
@@ -364,11 +376,20 @@ When a speech or transcript is ingested, it traverses a structured pipelines run
 
 ### Search
 * `GET /api/v1/search/claims` - Perform hybrid semantic/keyword search over database, supporting `typology` filters.
+* `GET /api/v1/search/claims/hybrid` - Perform advanced hybrid dense/sparse search using Reciprocal Rank Fusion (RRF).
+* `GET /api/v1/search/claims/{id}/related` - Retrieve similar statements delivered by other politicians.
 
 ### Campaign Promise Tracker
 * `POST /api/v1/promises` - Register a new campaign promise (Requires *journalist/admin*).
 * `GET /api/v1/promises` - Retrieve list of promises filtered by politician, status, and category.
 * `POST /api/v1/promises/evidence` - Link supporting/opposing evidence claims to active promises, evaluating status overrides (Requires *journalist/admin*).
+
+### Sources Registry
+* `GET /api/v1/sources` - List registered media sources.
+* `POST /api/v1/sources` - Register a new media source profile (Requires *journalist/admin*).
+
+### Knowledge Graph
+* `GET /api/v1/graph/politician/{id}/network` - Fetch politician relationship network nodes and edges.
 
 ### Editorial & Moderation
 * `GET /api/v1/admin/contradictions/queue` - Retrieve flagged contradictions (Requires *journalist/admin*).
