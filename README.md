@@ -257,7 +257,9 @@ CREATE TABLE transcript_segments (
     sequence_number INT NOT NULL,
     start_time NUMERIC(8, 2) NOT NULL, -- seconds
     end_time NUMERIC(8, 2) NOT NULL,
-    text_content TEXT NOT NULL
+    text_content TEXT NOT NULL,
+    language_code VARCHAR(10) NOT NULL DEFAULT 'en',
+    translated_text TEXT
 );
 
 CREATE TABLE claims (
@@ -267,7 +269,13 @@ CREATE TABLE claims (
     segment_id UUID REFERENCES transcript_segments(id) ON DELETE SET NULL,
     claim_text TEXT NOT NULL,
     embedding VECTOR(384) NOT NULL, -- HNSW Indexed for Cosine Distance search
-    category VARCHAR(100)
+    category VARCHAR(100),
+    language_code VARCHAR(10) NOT NULL DEFAULT 'en',
+    original_claim_text TEXT,
+    typology VARCHAR(50) NOT NULL DEFAULT 'general', -- 'promise', 'statistical', 'legislative', 'general'
+    extraction_confidence NUMERIC(5, 4) NOT NULL DEFAULT 1.0000,
+    is_decomposed BOOLEAN NOT NULL DEFAULT FALSE,
+    parent_claim_id UUID REFERENCES claims(id) ON DELETE SET NULL
 );
 
 CREATE TABLE contradictions (
@@ -277,6 +285,26 @@ CREATE TABLE contradictions (
     confidence_score NUMERIC(5, 4) NOT NULL,
     explanation TEXT NOT NULL,
     review_status VARCHAR(50) NOT NULL DEFAULT 'pending_review' -- 'pending_review', 'verified', 'dismissed'
+);
+
+CREATE TABLE promises (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    politician_id UUID NOT NULL REFERENCES politicians(id) ON DELETE CASCADE,
+    title VARCHAR(512) NOT NULL,
+    description TEXT NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'proposed', -- 'proposed', 'in_progress', 'fulfilled', 'broken', 'stalled'
+    category VARCHAR(100) NOT NULL,
+    target_completion_date DATE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE promise_evidence (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    promise_id UUID NOT NULL REFERENCES promises(id) ON DELETE CASCADE,
+    claim_id UUID REFERENCES claims(id) ON DELETE SET NULL,
+    evidence_type VARCHAR(50) NOT NULL, -- 'statement', 'bill_vote', 'department_report'
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
@@ -333,7 +361,12 @@ When a speech or transcript is ingested, it traverses a structured pipelines run
 * `GET /api/v1/speeches/{id}` - Fetch speech details and full timestamped transcripts.
 
 ### Search
-* `GET /api/v1/search/claims` - Perform hybrid semantic/keyword search over database.
+* `GET /api/v1/search/claims` - Perform hybrid semantic/keyword search over database, supporting `typology` filters.
+
+### Campaign Promise Tracker
+* `POST /api/v1/promises` - Register a new campaign promise (Requires *journalist/admin*).
+* `GET /api/v1/promises` - Retrieve list of promises filtered by politician, status, and category.
+* `POST /api/v1/promises/evidence` - Link supporting/opposing evidence claims to active promises, evaluating status overrides (Requires *journalist/admin*).
 
 ### Editorial & Moderation
 * `GET /api/v1/admin/contradictions/queue` - Retrieve flagged contradictions (Requires *journalist/admin*).
