@@ -41,6 +41,10 @@ class TranscriptSegment(Base):
     start_time = Column(Numeric(8, 2), nullable=False) # in seconds
     end_time = Column(Numeric(8, 2), nullable=False)
     text_content = Column(Text, nullable=False)
+    
+    # Multilingual fields
+    language_code = Column(String(10), default="en", nullable=False)
+    translated_text = Column(Text, nullable=True)
 
     # Relationships
     speech = relationship("Speech", back_populates="segments")

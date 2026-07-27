@@ -10,6 +10,8 @@ class ClaimOut(BaseModel):
     segment_id: Optional[UUID] = None
     claim_text: str
     category: Optional[str] = None
+    language_code: Optional[str] = "en"
+    original_claim_text: Optional[str] = None
     created_at: datetime
 
     class Config:

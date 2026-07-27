@@ -16,6 +16,11 @@ class Claim(Base):
     claim_text = Column(Text, nullable=False)
     embedding = Column(Vector(384), nullable=False) # matching all-MiniLM-L6-v2 vector dimension
     category = Column(String(100))
+    
+    # Multilingual fields
+    language_code = Column(String(10), default="en", nullable=False)
+    original_claim_text = Column(Text, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

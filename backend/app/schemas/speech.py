@@ -10,6 +10,8 @@ class TranscriptSegmentOut(BaseModel):
     start_time: float
     end_time: float
     text_content: str
+    language_code: Optional[str] = "en"
+    translated_text: Optional[str] = None
 
     class Config:
         from_attributes = True
