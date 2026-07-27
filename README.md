@@ -39,7 +39,7 @@ graph TD
     User([User / Journalist / Auditor]) -->|HTTPS| Frontend[Next.js 15 Web App]
     Frontend -->|REST APIs / JWT| API[FastAPI Gateway & Core Service]
     
-    subgraph Core Backend [Backend Services]
+    subgraph CoreBackend ["Backend Services"]
         API --> Auth[Auth & RBAC Module]
         API --> Profiles[Politician Profiles Module]
         API --> Search[Hybrid Search Module]
@@ -50,7 +50,7 @@ graph TD
     Ingestion -->|Publish Job| Redis[Redis Broker & Cache]
     Redis -->|Consume Job| Workers[Celery AI Workers]
 
-    subgraph AI Pipeline [AI Worker Services]
+    subgraph AIPipeline ["AI Worker Services"]
         Workers --> Preprocess[Audio Extractor]
         Workers --> Transcribe[WhisperX Service]
         Workers --> ClaimExtractor[spaCy / HF Sentence Extractor]
@@ -58,7 +58,7 @@ graph TD
         Workers --> NLIEngine[DeBERTa-v3 MNLI Classifier]
     end
 
-    Core Backend -->|SQL / pgvector| PostgreSQL[(PostgreSQL DB)]
+    CoreBackend -->|SQL / pgvector| PostgreSQL[(PostgreSQL DB)]
     Workers -->|Save Transcripts/Claims| PostgreSQL
 ```
 
@@ -144,11 +144,13 @@ flowchart TD
     Claims -->|all-MiniLM-L6-v2| Vectors[Claim Vector Embeddings]
     Vectors -->|pgvector Cosine Search| NeighborClaims[Historical Claims with Sim > 0.7]
     
-    NeighborClaims & Claims -->|DeBERTa-v3-large-MNLI| NLIPair[Premise / Hypothesis Pair]
+    NeighborClaims -->|DeBERTa-v3-large-MNLI| NLIPair[Premise / Hypothesis Pair]
+    Claims -->|DeBERTa-v3-large-MNLI| NLIPair
+    
     NLIPair -->|NLI Classification| Decision{Contradiction Probability > 0.75?}
     
-    Decision -->|Yes| Flagged[Flagged Contradiction & Generate Confidence Score]
-    Decision -->|No| SavedClaim[Save Regular Claim to Database]
+    Decision -->|Yes| Flagged["Flagged Contradiction & Generate Confidence Score"]
+    Decision -->|No| SavedClaim["Save Regular Claim to Database"]
 ```
 
 ---
