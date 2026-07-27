@@ -583,3 +583,31 @@ def test_advanced_semantic_search(client: TestClient, db_session):
     assert related_res.status_code == 200
     assert len(related_res.json()) > 0
     assert related_res.json()[0]["politician_id"] == pol2_id
+
+def test_moderation_portal_rbac(client: TestClient, db_session):
+    # Register standard user account (non-moderator)
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "standard_user@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "standard_user@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Query moderation queue - should receive 403 Forbidden
+    queue_res = client.get("/api/v1/admin/contradictions/queue", headers=headers)
+    assert queue_res.status_code == 403
+    assert queue_res.json()["detail"] == "Insufficient permissions"
+
+    # Post review - should receive 403 Forbidden
+    import uuid
+    review_res = client.post(
+        f"/api/v1/admin/contradictions/{uuid.uuid4()}/review",
+        headers=headers,
+        json={"review_status": "verified", "review_notes": "Attempt by user."}
+    )
+    assert review_res.status_code == 403
+    assert review_res.json()["detail"] == "Insufficient permissions"
