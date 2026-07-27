@@ -295,3 +295,76 @@ def test_advanced_claim_extraction(client: TestClient, db_session):
     # Verify that typology checks are operating
     typologies = [c.typology for c in claims]
     assert "promise" in typologies or "statistical" in typologies
+
+def test_campaign_promise_tracker(client: TestClient, db_session):
+    # Setup Admin Token
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "tracker_tester@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "tracker_tester@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create Politician
+    create_pol = client.post(
+        "/api/v1/politicians",
+        headers=headers,
+        json={"first_name": "Campaign", "last_name": "Runner", "party": "Republican"}
+    )
+    pol_id = create_pol.json()["id"]
+
+    # 1. Create a Campaign Promise
+    promise_res = client.post(
+        "/api/v1/promises",
+        headers=headers,
+        json={
+            "politician_id": pol_id,
+            "title": "Tax reduction plan",
+            "description": "Commitment to lower local business taxes.",
+            "category": "Economy"
+        }
+    )
+    assert promise_res.status_code == 201
+    promise_id = promise_res.json()["id"]
+    assert promise_res.json()["status"] == "proposed"
+
+    # 2. List promises and verify filters
+    list_res = client.get(f"/api/v1/promises?politician_id={pol_id}&category=Economy")
+    assert list_res.status_code == 200
+    assert len(list_res.json()) == 1
+    assert list_res.json()[0]["title"] == "Tax reduction plan"
+
+    # 3. Simulate creating opposing statement claim in DB manually
+    from app.models.contradiction import Claim
+    import uuid
+    claim = Claim(
+        politician_id=pol_id,
+        speech_id=uuid.uuid4(), # dummy uuid
+        claim_text="We must increase the corporate tax rate next year.",
+        embedding=[0.1] * 384,
+        category="Economy"
+    )
+    db_session.add(claim)
+    db_session.commit()
+
+    # 4. Attach opposing evidence and assert state transitions to broken
+    evidence_res = client.post(
+        "/api/v1/promises/evidence",
+        headers=headers,
+        json={
+            "promise_id": promise_id,
+            "claim_id": str(claim.id),
+            "evidence_type": "opposing_statement",
+            "notes": "Statement contradicts the original tax reduction promise."
+        }
+    )
+    assert evidence_res.status_code == 201
+    assert evidence_res.json()["notes"] == "Statement contradicts the original tax reduction promise."
+
+    # Verify state transitioned to broken
+    get_promise = client.get(f"/api/v1/promises?politician_id={pol_id}")
+    assert get_promise.json()[0]["status"] == "broken"
