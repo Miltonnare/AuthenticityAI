@@ -521,3 +521,65 @@ def test_source_credibility_engine(client: TestClient, db_session):
     assert list_res.status_code == 200
     assert len(list_res.json()) == 1
     assert list_res.json()[0]["name"] == "Parliamentary Hansard Portal"
+
+def test_advanced_semantic_search(client: TestClient, db_session):
+    # Setup Admin Token
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "search_tester2@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "search_tester2@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create two politicians
+    create_pol1 = client.post(
+        "/api/v1/politicians",
+        headers=headers,
+        json={"first_name": "Searcher", "last_name": "One", "party": "Independent"}
+    )
+    pol1_id = create_pol1.json()["id"]
+
+    create_pol2 = client.post(
+        "/api/v1/politicians",
+        headers=headers,
+        json={"first_name": "Searcher", "last_name": "Two", "party": "Independent"}
+    )
+    pol2_id = create_pol2.json()["id"]
+
+    # Seed two claims for different politicians manually in DB
+    from app.models.contradiction import Claim
+    import uuid
+    
+    claim1 = Claim(
+        politician_id=pol1_id,
+        speech_id=uuid.uuid4(),
+        claim_text="Corporate taxes are too high.",
+        embedding=[0.1] * 384,
+        category="General"
+    )
+    claim2 = Claim(
+        politician_id=pol2_id,
+        speech_id=uuid.uuid4(),
+        claim_text="Business tax cuts are vital.",
+        embedding=[0.11] * 384,
+        category="General"
+    )
+    db_session.add(claim1)
+    db_session.add(claim2)
+    db_session.commit()
+
+    # 1. Run hybrid search query
+    search_res = client.get("/api/v1/search/claims/hybrid?q=taxes")
+    assert search_res.status_code == 200
+    assert len(search_res.json()) > 0
+    assert "Corporate taxes" in search_res.json()[0]["claim_text"]
+
+    # 2. Query related claims
+    related_res = client.get(f"/api/v1/search/claims/{claim1.id}/related?limit=5")
+    assert related_res.status_code == 200
+    assert len(related_res.json()) > 0
+    assert related_res.json()[0]["politician_id"] == pol2_id
