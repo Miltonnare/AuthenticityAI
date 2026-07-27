@@ -34,6 +34,9 @@ class SpeechOut(SpeechBase):
     audio_codec: Optional[str] = None
     download_speed_kbps: Optional[float] = None
     error_log: Optional[str] = None
+    source_id: Optional[UUID] = None
+    credibility_score: Optional[float] = 0.60
+    credibility_breakdown: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

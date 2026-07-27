@@ -23,6 +23,11 @@ class Speech(Base):
     download_speed_kbps = Column(Numeric(8, 2), nullable=True)
     error_log = Column(Text, nullable=True)
     
+    # Credibility rating fields
+    source_id = Column(UUID(as_uuid=True), ForeignKey("sources.id", ondelete="SET NULL"), nullable=True)
+    credibility_score = Column(Numeric(3, 2), default=0.60, nullable=False)
+    credibility_breakdown = Column(Text, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -30,6 +35,7 @@ class Speech(Base):
     politician = relationship("Politician", back_populates="speeches")
     segments = relationship("TranscriptSegment", back_populates="speech", cascade="all, delete-orphan")
     claims = relationship("Claim", back_populates="speech", cascade="all, delete-orphan")
+    source = relationship("Source")
 
 
 class TranscriptSegment(Base):
