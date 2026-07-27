@@ -611,3 +611,50 @@ def test_moderation_portal_rbac(client: TestClient, db_session):
     )
     assert review_res.status_code == 403
     assert review_res.json()["detail"] == "Insufficient permissions"
+
+def test_public_api_data_export(client: TestClient, db_session):
+    # Setup User Token
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "dev_user@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "dev_user@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. Register API key
+    key_res = client.post(
+        "/api/v1/export/api-keys",
+        headers=headers,
+        json={"name": "Data Analysis App"}
+    )
+    assert key_res.status_code == 201
+    assert "api_key" in key_res.json()
+    assert key_res.json()["name"] == "Data Analysis App"
+
+    # 2. List API keys
+    list_res = client.get("/api/v1/export/api-keys", headers=headers)
+    assert list_res.status_code == 200
+    assert len(list_res.json()) == 1
+
+    # Create Politician
+    create_pol = client.post(
+        "/api/v1/politicians",
+        headers=headers,
+        json={"first_name": "Export", "last_name": "Pol", "party": "Independent"}
+    )
+    pol_id = create_pol.json()["id"]
+
+    # 3. Export Data in JSON
+    export_json = client.get(f"/api/v1/export/politician/{pol_id}?format=json")
+    assert export_json.status_code == 200
+    assert export_json.json()["politician"]["first_name"] == "Export"
+    assert "claims" in export_json.json()
+
+    # 4. Export Data in CSV
+    export_csv = client.get(f"/api/v1/export/politician/{pol_id}?format=csv")
+    assert export_csv.status_code == 200
+    assert "text/csv" in export_csv.headers["content-type"]
