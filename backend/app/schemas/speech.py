@@ -27,6 +27,11 @@ class SpeechOut(SpeechBase):
     id: UUID
     politician_id: UUID
     status: str
+    file_size_bytes: Optional[int] = None
+    duration_seconds: Optional[float] = None
+    audio_codec: Optional[str] = None
+    download_speed_kbps: Optional[float] = None
+    error_log: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

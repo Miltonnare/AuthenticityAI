@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, DateTime, Date, ForeignKey, Integer, Numeric, Text
+from sqlalchemy import Column, String, DateTime, Date, ForeignKey, Integer, Numeric, Text, BigInteger
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -15,6 +15,13 @@ class Speech(Base):
     media_type = Column(String(50), nullable=False) # 'youtube', 'mp4', 'manual'
     status = Column(String(50), nullable=False, default="pending") # 'pending', 'processing', 'completed', 'failed'
     date_delivered = Column(Date, nullable=False, index=True)
+    
+    # Media metadata additions for Speech Ingestion Pipeline
+    file_size_bytes = Column(BigInteger, nullable=True)
+    duration_seconds = Column(Numeric(8, 2), nullable=True)
+    audio_codec = Column(String(50), nullable=True)
+    download_speed_kbps = Column(Numeric(8, 2), nullable=True)
+    error_log = Column(Text, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
