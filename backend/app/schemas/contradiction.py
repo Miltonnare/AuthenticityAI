@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from uuid import UUID
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, date
+from typing import Optional, List
 
 class ClaimOut(BaseModel):
     id: UUID
@@ -21,6 +21,26 @@ class ClaimOut(BaseModel):
     class Config:
         from_attributes = True
 
+class CitationCreate(BaseModel):
+    title: str
+    url: str
+    source_name: str
+    published_date: Optional[date] = None
+
+
+class CitationOut(BaseModel):
+    id: UUID
+    contradiction_id: UUID
+    title: str
+    url: str
+    source_name: str
+    published_date: Optional[date] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class ContradictionOut(BaseModel):
     id: UUID
     original_claim_id: UUID
@@ -30,11 +50,18 @@ class ContradictionOut(BaseModel):
     confidence_score: float
     explanation: str
     review_status: str
+    reviewed_by: Optional[UUID] = None
+    review_notes: Optional[str] = None
+    verified_at: Optional[datetime] = None
+    citations: Optional[List[CitationOut]] = []
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
 
+
 class ContradictionReview(BaseModel):
     review_status: str # 'verified', 'dismissed'
+    review_notes: Optional[str] = None
+    citations: Optional[List[CitationCreate]] = []
