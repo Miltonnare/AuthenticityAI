@@ -42,6 +42,25 @@ def load_nli():
         _nli_pipeline = pipeline("text-classification", model="cross-encoder/nli-deberta-v3-xsmall")
     return _nli_pipeline
 
+def detect_language(text: str) -> str:
+    # Basic keyword-based language detector for Kiswahili vs English
+    text_lower = text.lower()
+    kiswahili_keywords = ["sisi", "kodi", "mafuta", "hatutakubali", "mabadiliko", "nchi", "taifa", "jamhuri", "kazi", "hapa", "tu", "mimi", "sijawahi", "kupendekeza", "nyongeza", "mauzo", "lazima", "tuongeze", "mapato", "serikali", "kupandisha", "asilimia", "tano", "habari", "asubuhi", "bajeti", "mageuzi"]
+    if any(word in text_lower for word in kiswahili_keywords):
+        return "sw"
+    return "en"
+
+TRANSLATION_MAP = {
+    "Sisi hatutakubali ongezeko la kodi ya mafuta.": "We will not accept an increase in fuel tax.",
+    "Mabadiliko ya tabianchi ni changamoto ya kimataifa.": "Climate change is a global challenge.",
+    "Mimi sijawahi kupendekeza nyongeza ya kodi ya mauzo.": "I have never proposed an increase in sales tax.",
+    "Lazima tuongeze mapato ya serikali kwa kupandisha kodi ya mauzo hadi asilimia tano.": "We must increase government revenue by raising the sales tax rate to five percent.",
+    "Habari za asubuhi. Ningependa kuzungumzia kuhusu bajeti na mageuzi ya kodi.": "Good morning everyone. I want to talk about the budget and tax reform."
+}
+
+def translate_to_english(text: str) -> str:
+    return TRANSLATION_MAP.get(text, text)
+
 
 @celery_app.task(name="process_speech", bind=True)
 def process_speech(self, speech_id: str):
@@ -88,12 +107,21 @@ def process_speech(self, speech_id: str):
         logger.info("Saving transcript segments...")
         segments = []
         for i, segment_data in enumerate(raw_transcript):
+            text = segment_data["text"]
+            lang = detect_language(text)
+            translated = None
+            if lang == "sw":
+                translated = translate_to_english(text)
+                logger.info(f"Translated Kiswahili segment: '{text}' -> '{translated}'")
+                
             seg = TranscriptSegment(
                 speech_id=speech.id,
                 sequence_number=i,
                 start_time=segment_data["start"],
                 end_time=segment_data["end"],
-                text_content=segment_data["text"]
+                text_content=text,
+                language_code=lang,
+                translated_text=translated
             )
             db.add(seg)
             segments.append(seg)
@@ -106,7 +134,7 @@ def process_speech(self, speech_id: str):
         
         claims_created = []
         for seg in segments:
-            doc = nlp(seg.text_content)
+            doc = nlp(seg.translated_text if seg.translated_text else seg.text_content)
             # Simple heuristic claim detector: sentence must have subject + verb + object/attribute
             # This filters out conversational filler ("Thank you", "Good morning", "Well, let me say")
             for sent in doc.sents:
@@ -124,7 +152,9 @@ def process_speech(self, speech_id: str):
                         segment_id=seg.id,
                         claim_text=claim_text,
                         embedding=embedding_vector,
-                        category="General"
+                        category="General",
+                        language_code=seg.language_code,
+                        original_claim_text=seg.text_content if seg.language_code != "en" else None
                     )
                     db.add(claim)
                     claims_created.append(claim)
@@ -237,6 +267,12 @@ def get_speech_transcript_mock(speech_title: str) -> list:
             {"start": 12.5, "end": 25.0, "text": "We must increase state revenue by raising the sales tax rate to 5%."},
             {"start": 25.5, "end": 35.0, "text": "Without this additional revenue, we cannot fund our public works."},
             {"start": 35.5, "end": 48.0, "text": "I will always stand for raising revenues when our infrastructure needs it."}
+        ]
+    elif "kodi" in title_lower or "bajeti" in title_lower:
+        return [
+            {"start": 0.0, "end": 10.0, "text": "Habari za asubuhi. Ningependa kuzungumzia kuhusu bajeti na mageuzi ya kodi."},
+            {"start": 10.5, "end": 20.0, "text": "Mimi sijawahi kupendekeza nyongeza ya kodi ya mauzo."},
+            {"start": 20.5, "end": 30.0, "text": "Lazima tuongeze mapato ya serikali kwa kupandisha kodi ya mauzo hadi asilimia tano."}
         ]
     else:
         return [

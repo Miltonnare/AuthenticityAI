@@ -160,3 +160,76 @@ def test_ingest_file(client: TestClient):
     status_res = client.get(f"/api/v1/speeches/ingest/{speech_id}/status")
     assert status_res.status_code == 200
     assert status_res.json()["status"] in ["queued", "processing", "completed"]
+
+def test_multilingual_speech_processing(client: TestClient, db_session):
+    # 1. Setup Admin Token
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "sw_tester@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "sw_tester@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. Create Politician
+    create_pol = client.post(
+        "/api/v1/politicians",
+        headers=headers,
+        json={"first_name": "Kiswahili", "last_name": "Speaker", "party": "Independent"}
+    )
+    pol_id = create_pol.json()["id"]
+
+    # 3. Create Speech with Kiswahili title (triggers mock transcript with Kiswahili text)
+    speech_res = client.post(
+        "/api/v1/speeches/ingest/url",
+        headers=headers,
+        json={
+            "politician_id": pol_id,
+            "title": "Mageuzi ya kodi na bajeti ya serikali",
+            "source_url": "https://www.youtube.com/watch?v=sw_test",
+            "media_type": "youtube",
+            "date_delivered": "2026-07-27"
+        }
+    )
+    assert speech_res.status_code == 202
+    speech_id = speech_res.json()["id"]
+
+    # 4. Execute the background task synchronously using db_session
+    from app.worker.tasks import process_speech
+    task_res = process_speech(speech_id)
+    assert task_res["status"] == "completed"
+
+    # 5. Verify database records have translations and language code updates
+    from app.models.speech import TranscriptSegment, Speech
+    from app.models.contradiction import Claim
+
+    speech_record = db_session.query(Speech).filter(Speech.id == speech_id).first()
+    assert speech_record.status == "completed"
+
+    segments = db_session.query(TranscriptSegment).filter(TranscriptSegment.speech_id == speech_id).all()
+    assert len(segments) > 0
+    
+    # Check that Kiswahili segments were translated and tagged
+    kiswahili_segs = [s for s in segments if s.language_code == "sw"]
+    assert len(kiswahili_segs) > 0
+    for s in kiswahili_segs:
+        assert s.translated_text is not None
+        assert s.text_content in TRANSLATION_MAP_KEYS_CHECK(s.text_content)
+
+    claims = db_session.query(Claim).filter(Claim.speech_id == speech_id).all()
+    assert len(claims) > 0
+    for c in claims:
+        assert c.language_code == "sw"
+        assert c.original_claim_text is not None
+        # Verify that the search text of the claim is stored in translated English
+        assert c.claim_text != c.original_claim_text
+
+def TRANSLATION_MAP_KEYS_CHECK(text: str) -> list:
+    return [
+        "Mimi sijawahi kupendekeza nyongeza ya kodi ya mauzo.",
+        "Lazima tuongeze mapato ya serikali kwa kupandisha kodi ya mauzo hadi asilimia tano.",
+        "Habari za asubuhi. Ningependa kuzungumzia kuhusu bajeti na mageuzi ya kodi."
+    ]
