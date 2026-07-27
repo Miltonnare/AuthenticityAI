@@ -320,6 +320,45 @@ CREATE TABLE promise_evidence (
     notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE audit_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    action VARCHAR(100) NOT NULL,
+    target_id UUID NOT NULL,
+    payload TEXT,
+    prev_hash VARCHAR(64),
+    signature_hash VARCHAR(64) UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE subscriptions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    politician_id UUID REFERENCES politicians(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_user_politician_sub UNIQUE (user_id, politician_id)
+);
+
+CREATE TABLE notifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    body VARCHAR(1024) NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE feedback_reports (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    target_id UUID NOT NULL,
+    target_type VARCHAR(50) NOT NULL,
+    report_type VARCHAR(50) NOT NULL,
+    description TEXT NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'open',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
 ---
@@ -395,6 +434,24 @@ When a speech or transcript is ingested, it traverses a structured pipelines run
 * `GET /api/v1/admin/contradictions/queue` - Retrieve flagged contradictions (Requires *journalist/admin*).
 * `POST /api/v1/admin/contradictions/{id}/review` - Approve or dismiss contradiction (Requires *journalist/admin*).
 * `GET /api/v1/admin/speeches/queue` - Audit pipeline logs and speech workers (Requires *journalist/admin*).
+
+### Developer Export APIs
+* `POST /api/v1/export/api-keys` - Register a new API key.
+* `GET /api/v1/export/api-keys` - List active API keys.
+* `GET /api/v1/export/politician/{id}` - Stream bulk politician records (JSON/CSV).
+
+### Notification Engine
+* `POST /api/v1/notifications/subscribe/{politician_id}` - Toggle alert subscription.
+* `GET /api/v1/notifications` - Retrieve chronological alert log.
+* `POST /api/v1/notifications/read-all` - Mark all notifications as read.
+
+### External Audit Trails
+* `GET /api/v1/audit/logs` - Retrieve sequentially chained audit ledger.
+* `GET /api/v1/audit/verify` - Verify cryptographic chain sequence integrity.
+
+### User Feedback Loops
+* `POST /api/v1/feedback` - Submit crowdsourced corrections/context reports.
+* `GET /api/v1/admin/feedback/queue` - Retrieve pending suggestions queue (Requires *journalist/admin*).
 
 ---
 
