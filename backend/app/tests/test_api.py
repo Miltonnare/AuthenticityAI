@@ -724,3 +724,70 @@ def test_notification_engine(client: TestClient, db_session):
     # Verify notification is marked as read
     notify_res2 = client.get("/api/v1/notifications", headers=headers)
     assert notify_res2.json()[0]["is_read"] is True
+
+def test_external_audit_trails(client: TestClient, db_session):
+    # Setup Admin Token
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "audit_tester@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "audit_tester@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create Politician & Claims & Contradiction
+    create_pol = client.post(
+        "/api/v1/politicians",
+        headers=headers,
+        json={"first_name": "Audit", "last_name": "Pol", "party": "Independent"}
+    )
+    pol_id = create_pol.json()["id"]
+
+    from app.models.contradiction import Claim, Contradiction
+    import uuid
+    claim1 = Claim(politician_id=pol_id, speech_id=uuid.uuid4(), claim_text="Tax is good.", embedding=[0.1]*384)
+    claim2 = Claim(politician_id=pol_id, speech_id=uuid.uuid4(), claim_text="Tax is bad.", embedding=[0.11]*384)
+    db_session.add(claim1)
+    db_session.add(claim2)
+    db_session.commit()
+
+    contra = Contradiction(original_claim_id=claim1.id, contradicting_claim_id=claim2.id, confidence_score=0.9, explanation="Tax stance contradictions")
+    db_session.add(contra)
+    db_session.commit()
+
+    # 1. Post a review (triggers chained audit log creation)
+    review_res = client.post(
+        f"/api/v1/admin/contradictions/{contra.id}/review",
+        headers=headers,
+        json={"review_status": "verified", "review_notes": "Reviewed for cryptographic audit test."}
+    )
+    assert review_res.status_code == 200
+
+    # 2. Retrieve public logs and verify hash chaining
+    logs_res = client.get("/api/v1/audit/logs")
+    assert logs_res.status_code == 200
+    logs = logs_res.json()
+    assert len(logs) > 0
+    assert logs[-1]["signature_hash"] is not None
+    assert logs[-1]["prev_hash"] is not None
+
+    # 3. Verify ledger integrity
+    verify_res = client.get("/api/v1/audit/verify")
+    assert verify_res.status_code == 200
+    assert verify_res.json()["is_valid"] is True
+
+    # 4. Tamper with a log payload in database manually
+    from app.models.contradiction import AuditLog
+    db_log = db_session.query(AuditLog).filter(AuditLog.target_id == contra.id).first()
+    assert db_log is not None
+    db_log.payload = '{"tampered": "payload"}'
+    db_session.commit()
+
+    # 5. Verify ledger integrity again - should detect tampering!
+    verify_res2 = client.get("/api/v1/audit/verify")
+    assert verify_res2.status_code == 200
+    assert verify_res2.json()["is_valid"] is False
+    assert verify_res2.json()["tampered_log_id"] == str(db_log.id)

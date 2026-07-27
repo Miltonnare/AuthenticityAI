@@ -4,6 +4,7 @@ from uuid import UUID
 from typing import List
 from datetime import datetime
 import json
+import hashlib
 from app.core.database import get_db
 from app.core.security import RoleChecker, get_current_user
 from app.models.contradiction import Contradiction, AuditLog, Citation
@@ -16,6 +17,26 @@ router = APIRouter(prefix="/admin", tags=["Admin Moderation"])
 
 # Restrict all endpoints here to Admin or Journalist roles
 is_moderator = RoleChecker(allowed_roles=["admin", "journalist"])
+
+def write_chained_audit_log(db: Session, user_id: UUID, action: str, target_id: UUID, payload: dict) -> AuditLog:
+    latest = db.query(AuditLog).order_by(AuditLog.created_at.desc()).first()
+    prev_hash = latest.signature_hash if latest else "0000000000000000000000000000000000000000000000000000000000000000"
+    
+    payload_str = json.dumps(payload)
+    hash_input = f"{prev_hash}{action}{payload_str}{target_id}"
+    sig_hash = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+    
+    log = AuditLog(
+        user_id=user_id,
+        action=action,
+        target_id=target_id,
+        payload=payload_str,
+        prev_hash=prev_hash,
+        signature_hash=sig_hash
+    )
+    db.add(log)
+    # Note: We do not call commit here to let the calling endpoint manage transaction scoping!
+    return log
 
 @router.get("/contradictions/queue", response_model=List[ContradictionOut])
 def get_contradiction_queue(
@@ -80,13 +101,13 @@ def review_contradiction(
         "review_notes": review.review_notes,
         "citations": citations_added
     }
-    audit = AuditLog(
+    write_chained_audit_log(
+        db=db,
         user_id=current_user.id,
         action=f"{review.review_status}_contradiction",
         target_id=id,
-        payload=json.dumps(log_payload)
+        payload=log_payload
     )
-    db.add(audit)
     
     db.commit()
     db.refresh(contradiction)
