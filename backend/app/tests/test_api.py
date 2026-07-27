@@ -368,3 +368,87 @@ def test_campaign_promise_tracker(client: TestClient, db_session):
     # Verify state transitioned to broken
     get_promise = client.get(f"/api/v1/promises?politician_id={pol_id}")
     assert get_promise.json()[0]["status"] == "broken"
+
+def test_fact_verification_workflow(client: TestClient, db_session):
+    # Setup Admin Token
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "moderator_tester@authenticity.io", "password": "securepassword"}
+    )
+    login_res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "moderator_tester@authenticity.io", "password": "securepassword"}
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create Politician
+    create_pol = client.post(
+        "/api/v1/politicians",
+        headers=headers,
+        json={"first_name": "Moderated", "last_name": "Pol", "party": "Independent"}
+    )
+    pol_id = create_pol.json()["id"]
+
+    # Simulate two claims and a contradiction manually in DB
+    from app.models.contradiction import Claim, Contradiction, AuditLog, Citation
+    import uuid
+    
+    claim1 = Claim(
+        politician_id=pol_id,
+        speech_id=uuid.uuid4(),
+        claim_text="I support tax reduction.",
+        embedding=[0.1] * 384,
+        category="General"
+    )
+    claim2 = Claim(
+        politician_id=pol_id,
+        speech_id=uuid.uuid4(),
+        claim_text="I oppose tax reduction.",
+        embedding=[0.1] * 384,
+        category="General"
+    )
+    db_session.add(claim1)
+    db_session.add(claim2)
+    db_session.flush()
+
+    contra = Contradiction(
+        original_claim_id=claim1.id,
+        contradicting_claim_id=claim2.id,
+        confidence_score=0.88,
+        explanation="Claims display opposing tax policy stances."
+    )
+    db_session.add(contra)
+    db_session.commit()
+
+    # Call review/verify endpoint
+    review_res = client.post(
+        f"/api/v1/admin/contradictions/{contra.id}/review",
+        headers=headers,
+        json={
+            "review_status": "verified",
+            "review_notes": "Citations support voting records of stance contradiction.",
+            "citations": [
+                {
+                    "title": "Treasury tax reports 2026",
+                    "url": "https://government.gov/treasury",
+                    "source_name": "Treasury Department",
+                    "published_date": "2026-07-27"
+                }
+            ]
+        }
+    )
+    assert review_res.status_code == 200
+    assert review_res.json()["review_status"] == "verified"
+    assert review_res.json()["review_notes"] == "Citations support voting records of stance contradiction."
+    assert len(review_res.json()["citations"]) == 1
+
+    # Verify Audit Log and Citation exist in DB
+    audit = db_session.query(AuditLog).filter(AuditLog.target_id == contra.id).first()
+    assert audit is not None
+    assert audit.action == "verified_contradiction"
+    assert "Treasury tax reports" in audit.payload
+
+    citation = db_session.query(Citation).filter(Citation.contradiction_id == contra.id).first()
+    assert citation is not None
+    assert citation.title == "Treasury tax reports 2026"
