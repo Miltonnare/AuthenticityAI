@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Shield } from "lucide-react";
 
 export default function LoginPage() {
@@ -58,7 +57,6 @@ export default function LoginPage() {
       // Fallback auth for demonstration if API is offline
       if (email && password) {
         console.warn("API offline - triggering mock authentication credentials...");
-        // Auto bypass for demo
         const role = email.includes("admin") ? "admin" : "user";
         login("mock-jwt-token-id-12345", { email, role });
         router.push("/dashboard");
@@ -71,13 +69,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center bg-[#0f0f11] py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-[#141417] p-8 rounded-xl border border-gray-850">
+    <div className="flex-1 flex items-center justify-center bg-[#09090b] py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8 bg-[#141416] p-8 rounded-xl border border-[#202024]">
         <div className="text-center">
           <div className="mx-auto h-12 w-12 rounded-lg bg-orange-950/40 border border-orange-900/30 flex items-center justify-center text-orange-400 mb-4">
             <Shield className="w-6 h-6" />
           </div>
-          <h2 className="text-3xl font-serif font-bold text-white">Sign In to Authenticity</h2>
+          <h2 className="text-3xl font-serif font-bold text-white tracking-tight">Sign In to Authenticity</h2>
           <p className="mt-2 text-xs text-gray-500">
             For journalists and audit moderators.
           </p>
@@ -99,7 +97,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="e.g. admin@authenticity.io"
-                className="w-full px-3 py-2.5 rounded bg-[#0f0f11] border border-gray-800 focus:border-orange-500 outline-none text-sm text-white"
+                className="w-full px-3.5 py-2.5 rounded-lg bg-[#0c0c0e] border border-[#202024] focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none text-sm text-white transition-all"
               />
             </div>
             <div>
@@ -110,7 +108,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full px-3 py-2.5 rounded bg-[#0f0f11] border border-gray-800 focus:border-orange-500 outline-none text-sm text-white"
+                className="w-full px-3.5 py-2.5 rounded-lg bg-[#0c0c0e] border border-[#202024] focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none text-sm text-white transition-all"
               />
             </div>
           </div>
@@ -119,14 +117,14 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-orange-650 hover:bg-orange-600 text-white rounded font-semibold text-sm transition-all cursor-pointer flex justify-center items-center disabled:opacity-50"
+              className="w-full py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm transition-all cursor-pointer flex justify-center items-center disabled:opacity-50 shadow-lg shadow-orange-950/20"
             >
               {loading ? "Authenticating..." : "Sign In"}
             </button>
           </div>
           
-          <div className="text-center text-xs text-gray-500">
-            Tip: Type <span className="text-orange-400 font-mono">admin@authenticity.io</span> with any password to test administrative controls.
+          <div className="text-center text-xs text-gray-500 bg-[#0c0c0e] p-3 rounded-lg border border-[#202024]/50">
+            Tip: Type <span className="text-orange-400 font-mono font-semibold">admin@authenticity.io</span> with any password to test administrative controls.
           </div>
         </form>
       </div>
